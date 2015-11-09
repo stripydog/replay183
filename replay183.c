@@ -163,49 +163,65 @@ long nextsen(FILE *f, char *sen)
 int main(int argc, char **argv)
 {
     FILE *f;
-    long int t;
+    int c,loop=0,err=0;
+    long t=0, n=1;
     sigset_t sm,om;
     char sentence[MAXBUF];
     char *terminator="\n";
     struct itimerval when;
     struct sigaction sa;
+    struct timeval delay = {1,0};
 
-    if (argc == 3 && (!strcmp(argv[1],"-r")))
-        terminator="\r\n";
-
-    else if (argc != 2) {
-        fprintf(stderr, "Useage: %s [-r] <filename>\n",PROGNAME);
-        return (1);
+    while ((c = getopt(argc,argv,"rcd:n:")) != -1) {
+        switch(c) {
+        case 'r':
+            terminator="\r\n";
+            break;
+        case 'c':
+            loop=1;
+            break;
+        case 'd':
+            if ((delay.tv_usec=strtol(optarg,NULL,10)) == 0 && (errno)) {
+                fprintf(stderr,"Invalid delay: %s\n",optarg);
+                err++;
+            } else {
+                if ((delay.tv_sec = delay.tv_usec / 1000)) {
+                    delay.tv_usec %= 1000;
+                }
+                delay.tv_usec *= 1000;
+            }
+            break;
+        case 'n':
+            if ((n=strtol(optarg,NULL,10)) == 0 && (errno)) {
+                fprintf(stderr,"Invalid repetitions: %s\n",optarg);
+                err++;
+            }
+            break;
+        case '?':
+        default:
+            err++;
+            break;
+        }
     }
 
-    if ((f=fopen(argv[argc-1],"r")) == NULL) {
-        fprintf(stderr,"%s: Could not open %s: %s\n",PROGNAME,argv[1],
-                strerror(errno));
+    if (err || (argc == optind)) {
+        fprintf(stderr,"Usage: %s [-r] [-c | -n <repetitions> ] [-d <delay> ] filename ...",PROGNAME);
         return(1);
     }
+    argc-=optind;
+    argv+=optind;
 
-    /* Get first timestamped sentence */
-    if ((t = nextsen(f,sentence)) < 0) {
-        fprintf(stderr,"No timestamped data available\n");
-        return(1);
-    }
+
 
     /* set line buffering in case we want to pipe this to something */
     setlinebuf(stdout);
-
-    printf("%s%s",sentence,terminator);
-
-    /* initialise the base time to "now".  differences between future timestamps
-     * and the first one will reflect when, relative to now, each sentence is
-     * sent */
-    inittime(t);
 
     /* We don't want to automatically re-set the interval timer so make
      * it_interval 0 */
     when.it_interval.tv_sec=0;
     when.it_interval.tv_usec=0;
 
-    /* Block SIGARLN */
+    /* Block SIGARLM */
     sigemptyset(&sm);
     sigaddset(&sm,SIGALRM);
     sigprocmask(SIG_BLOCK,&sm,&om);
@@ -216,20 +232,58 @@ int main(int argc, char **argv)
     sa.sa_flags=0;
     sigaction(SIGALRM,&sa,NULL);
 
-    /* Main loop: until the end of file, loop getting timestamped sentences.
-     * Transmit those at points relative at the same time relative to the first
-     * one as when they were "recorded" */
-    while ((t = nextsen(f,sentence)) > 0) {
-        if (saywhen(t,&when) > 0) {
-            setitimer(ITIMER_REAL, &when,NULL);
-            /* This changes the signal mask to unblock SIGALRM. When the timer
-             * fires (even if it already has) the no-op handler is called and
-             * processing continues */
-            sigsuspend(&om);
-        }
-        printf("%s%s",sentence,terminator);
-    }
+    while (n) {
+        for (c=0;c<argc;c++) {
+            if ((delay.tv_sec || delay.tv_usec) && t) {
+                /* inter-file time set and not first file */
+                when.it_value.tv_sec = delay.tv_sec;
+                when.it_value.tv_usec = delay.tv_usec;
+                setitimer(ITIMER_REAL, &when,NULL);
+                sigsuspend(&om);
+            }
 
+            if ((f=fopen(argv[c],"r")) == NULL) {
+                fprintf(stderr,"%s: Could not open %s: %s\n",PROGNAME,argv[c],
+                    strerror(errno));
+                return(1);
+            }
+
+            /* Get first timestamped sentence */
+            if ((t = nextsen(f,sentence)) < 0) {
+                fprintf(stderr,"%s does not contain timestamped data\n",
+                    argv[c]);
+                fclose(f);
+                return(1);
+            }
+
+            printf("%s%s",sentence,terminator);
+
+            /* initialise the base time to "now".  differences between future
+             * timestamps and the first one will reflect when, relative to now,
+             * each sentence is sent
+             */
+            inittime(t);
+
+            /* Main loop: until the end of file, loop getting timestamped
+             * sentences. Transmit those at points relative at the same time
+             * relative to the first one as when they were "recorded"
+             */
+            while ((t = nextsen(f,sentence)) > 0) {
+                if (saywhen(t,&when) > 0) {
+                    setitimer(ITIMER_REAL, &when,NULL);
+                    /* This changes the signal mask to unblock SIGALRM. When the
+                     *  timer fires (even if it already has) the no-op handler
+                     * is called and processing continues
+                     */
+                    sigsuspend(&om);
+                }
+                printf("%s%s",sentence,terminator);
+            }
+            fclose(f);
+        }
+        if (!loop)
+            --n;
+    }
 
     /* Restore original signal mask before exit */
     sigprocmask(SIG_SETMASK,&om,NULL);
@@ -252,7 +306,7 @@ void inittime(long int t)
 long saywhen(long t, struct itimerval *when)
 {
     long s,now;
-    static struct timeval tv;
+    struct timeval tv;
 
     gettimeofday(&tv, NULL);
     now=tv.tv_sec*1000+tv.tv_usec/1000;

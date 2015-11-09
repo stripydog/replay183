@@ -20,11 +20,20 @@ you want.
 Usage
 -----
 
-replay183 [-r] <logfile>
-where <logfile> is the file containing timestamped data to replay.  Without the
-"-r" option replay183 will output recorded sentences terminated by a single
-newline ("\n" or "<LF>").  With "-r" specified, the output will be terminated
-by the standard NMEA-0183 sentence termination sequence "\r\n" ("<CR><LF>").
+replay183 [-r] [-c | -n <repetitions>] [-d <delay> ] logfile ...
+where logfile is one or more files containing timestamped data to replay.
+if "-c" is specified replay183 will loop continuously through all logfiles
+specifed on the command line.
+If "-n <repetitions>" is specified, replay183 will loop <repetitions> times
+through the specified logfiles.
+If neither -c nor -n is specified, each logfile will be processed once.
+If "-d <delay>" is specified replay183 will wait <delay> milliseconds between
+each file to be processed. The default value is 1000ms (1 second).
+
+Without the "-r" option replay183 will output recorded sentences terminated by a
+single newline ("\n" or "<LF>").  With "-r" specified, the output will be
+terminated by the standard NMEA-0183 sentence termination sequence "\r\n"
+("<CR><LF>").
 
 The output of replay183 can be piped into kplex's standard input (in which case
 there is no need to specify "-r") or sent directly to a process or device
