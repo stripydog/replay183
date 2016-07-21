@@ -19,21 +19,26 @@
 
 #define MAXBUF 92
 #define PROGNAME "replay183"
+#define VERSION "1.1"
 
-long saywhen ( long, struct itimerval *);
-void inittime (long);
+long long saywhen ( long long, struct itimerval *);
+void inittime (long long);
 
 /* no-op handler for SIGALRM */
 void alrm(int s)
 {}
 
 /* convert string time TAG to millisecond representation */
-long strtot(char* ptr)
+long long strtot(char* ptr)
 {
-    long retval;
+    long long retval;
     int len;
 
-    if ((retval = strtol(ptr,NULL,10))) {
+    errno = 0;
+
+    if ((retval = strtoll(ptr,NULL,10))) {
+        if (errno == ERANGE)
+            return(0);
         if ((len=strlen(ptr)) >= 10 && len < 13)
         /* The only way you can tell it's seconds... */ 
             retval *=1000;
@@ -48,11 +53,11 @@ long strtot(char* ptr)
 /* extract next TAG timestamped sentence */
 /* Returns millisecond timestamp and populates sentence buffer with associated
  * sentence.  Returns -1 on error or EOF */
-long nextsen(FILE *f, char *sen)
+long long nextsen(FILE *f, char *sen)
 {
     char c, *ptr;
     int count;
-    long sentime = 0;
+    long long sentime = 0;
     enum {  SEN_NODATA,
             SEN_TAGFIRST,
             SEN_TAG,
@@ -164,7 +169,7 @@ int main(int argc, char **argv)
 {
     FILE *f;
     int c,loop=0,err=0;
-    long t=0, n=1;
+    long long t=0, n=1;
     sigset_t sm,om;
     char sentence[MAXBUF];
     char *terminator="\n";
@@ -172,7 +177,7 @@ int main(int argc, char **argv)
     struct sigaction sa;
     struct timeval delay = {1,0};
 
-    while ((c = getopt(argc,argv,"rcd:n:")) != -1) {
+    while ((c = getopt(argc,argv,"Vrcd:n:")) != -1) {
         switch(c) {
         case 'r':
             terminator="\r\n";
@@ -197,6 +202,10 @@ int main(int argc, char **argv)
                 err++;
             }
             break;
+        case 'V':
+            printf("%s Version %s\n",PROGNAME,VERSION);
+            return 0;
+            break;
         case '?':
         default:
             err++;
@@ -205,7 +214,7 @@ int main(int argc, char **argv)
     }
 
     if (err || (argc == optind)) {
-        fprintf(stderr,"Usage: %s [-r] [-c | -n <repetitions> ] [-d <delay> ] filename ...",PROGNAME);
+        fprintf(stderr,"Usage: %s [-r] [-c | -n <repetitions> ] [-d <delay> ] filename ...\n       %s -V\n",PROGNAME,PROGNAME);
         return(1);
     }
     argc-=optind;
@@ -290,10 +299,10 @@ int main(int argc, char **argv)
     return(0);
 }
 
-long int basetime;      /* Time we started the replay (ms since the epoch) */
+long long basetime;      /* Time we started the replay (ms since the epoch) */
 
 /* Record time we started replay */
-void inittime(long int t)
+void inittime(long long t)
 {
     struct timeval tv;
 
@@ -303,9 +312,9 @@ void inittime(long int t)
 
 /* Work out how long until the next sentence needs playing
  * Returns the number of ms until the next sentence */
-long saywhen(long t, struct itimerval *when)
+long long saywhen(long long t, struct itimerval *when)
 {
-    long s,now;
+    long long s,now;
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
